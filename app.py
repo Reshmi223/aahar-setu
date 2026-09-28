@@ -74,7 +74,7 @@ tab1, tab2, tab3 = st.tabs([
 ]
 
 with tab1:
-    st.header(""Donate Extra Food Details Form")
+    st.header("Donate Extra Food Details Form")
     with st.form("donation_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
