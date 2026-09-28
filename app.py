@@ -3,7 +3,7 @@ from supabase import create_client, Client
 from datetime import datetime
 
 # --- SUPABASE CLOUD DATABASE CONFIGURATION WITH DYNAMIC QUERIES ---
-SUPABASE_URL = "https://supabase.co"
+SUPABASE_URL = "https://nqvjrapatfdvvjfxogkl.supabase.co"
 SUPABASE_KEY = "sb_publishable_PeDf0zC_6j8CjonEa1LB2Q_j3FQmvHy"
 
 @st.cache_resource
