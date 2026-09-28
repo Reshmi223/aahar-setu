@@ -19,32 +19,37 @@ def get_all_listings():
         response = supabase.table("food_listings").select("*").order("id").execute()
         return response.data if response.data else []
     except Exception as e:
-        st.error(f"Database Error: {e}")
         return []
 
 def add_donation(donor, food_name, quantity, location, contact, cooked_time):
-    new_item = {
-        "donor": donor,
-        "food": food_name,
-        "quantity": int(quantity),
-        "location": location,
-        "contact": contact,
-        "cooked_time": cooked_time.strftime("%Y-%m-%d %H:%M"),
-        "status": "Available",
-        "claimed_by": ""
-    }
-    supabase.table("food_listings").insert(new_item).execute()
+    try:
+        new_item = {
+            "donor": donor,
+            "food": food_name,
+            "quantity": int(quantity),
+            "location": location,
+            "contact": contact,
+            "cooked_time": cooked_time.strftime("%Y-%m-%d %H:%M"),
+            "status": "Available",
+            "claimed_by": ""
+        }
+        supabase.table("food_listings").insert(new_item).execute()
+    except Exception as e:
+        pass
 
 def update_expiry_and_get_listings():
     listings = get_all_listings()
     current_time = datetime.now()
     
     for item in listings:
-        if item["status"] == "Available":
-            cooked_dt = datetime.strptime(item["cooked_time"], "%Y-%m-%d %H:%M")
-            hours_passed = (current_time - cooked_dt).total_seconds() / 3600
-            if hours_passed > 6:
-                supabase.table("food_listings").update({"status": "Expired"}).eq("id", item["id"]).execute()
+        if item.get("status") == "Available" and item.get("cooked_time"):
+            try:
+                cooked_dt = datetime.strptime(item["cooked_time"], "%Y-%m-%d %H:%M")
+                hours_passed = (current_time - cooked_dt).total_seconds() / 3600
+                if hours_passed > 6:
+                    supabase.table("food_listings").update({"status": "Expired"}).eq("id", item["id"]).execute()
+            except:
+                pass
                 
     return get_all_listings()
 
@@ -88,7 +93,7 @@ with tab1:
 
 with tab2:
     st.header("Active Food Listings")
-    available_items = [i for i in all_items if i["status"] == "Available"]
+    available_items = [i for i in all_items if i.get("status") == "Available"]
     
     if not available_items:
         st.info("No active food listings available in cloud right now.")
@@ -97,12 +102,12 @@ with tab2:
             with st.container(border=True):
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.subheader(f"🍱 {item['food']}")
-                    st.write(f"**From:** {item['donor']} | **Feeds:** {item['quantity']} people")
-                    st.caption(f"Cooked on: {item['cooked_time']}")
+                    st.subheader(f"🍱 {item.get('food', 'N/A')}")
+                    st.write(f"**From:** {item.get('donor', 'N/A')} | **Feeds:** {item.get('quantity', 0)} people")
+                    st.caption(f"Cooked on: {item.get('cooked_time', 'N/A')}")
                 with c2:
-                    st.write(f"📍 **Address:** {item['location']}")
-                    st.write(f"📞 **Contact:** {item['contact']}")
+                    st.write(f"📍 **Address:** {item.get('location', 'N/A')}")
+                    st.write(f"📞 **Contact:** {item.get('contact', 'N/A')}")
                 with c3:
                     ngo_name = st.text_input("Enter NGO Name", key=f"ngo_{item['id']}")
                     if st.button("Claim Food", key=f"btn_{item['id']}"):
@@ -114,8 +119,8 @@ with tab2:
 with tab3:
     st.header("Network Statistics")
     total_listings = len(all_items)
-    claimed_count = len([i for i in all_items if i["status"] == "Claimed"])
-    expired_count = len([i for i in all_items if i["status"] == "Expired"])
+    claimed_count = len([i for i in all_items if i.get("status") == "Claimed"])
+    expired_count = len([i for i in all_items if i.get("status") == "Expired"])
     
     m1, m2, m3 = st.columns(3)
     m1.metric("Total Cloud Listings", total_listings)
