@@ -71,7 +71,7 @@ tab1, tab2, tab3 = st.tabs([
     "🎁 Donate Food Platform ", 
     "🔎 Active Food Rescue Listings (NGO Real-Time View Tracker)", 
     "📋 Transactions Analytics Log Dashboard"
-]
+])
 
 with tab1:
     st.header("Donate Extra Food Details Form")
