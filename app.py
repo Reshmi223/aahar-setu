@@ -1,162 +1,138 @@
 import streamlit as st
-from supabase import create_client, Client
+import json
+import os
 from datetime import datetime
 
-# --- AUTOMATIC INTEGRATION WITH YOUR EXACT DATABASE URL & KEY ---
-SUPABASE_URL = "https://nqvjrapatfdvvjfxogkl.supabase.co/rest/v1/"
-SUPABASE_KEY = "sb_publishable_PeDf0zC_6j8CjonEa1LB2Q_j3FQmvHy"
-@st.cache_resource
-def init_supabase():
-    try:
-        return create_client(SUPABASE_URL, SUPABASE_KEY)
-    except Exception as e:
-        return None
+DB_FILE = "food_rescue_db.json"
 
-supabase: Client = init_supabase()
+def init_db():
+    if not os.path.exists(DB_FILE):
+        with open(DB_FILE, 'w') as f:
+            json.dump([], f)
 
-# --- DATABASE CORE PERSISTENCE OPERATIONS ---
 def get_all_listings():
-    if not supabase:
-        return []
-    try:
-        response = supabase.table("food_listings").select("*").execute()
-        if hasattr(response, 'data') and response.data is not None:
-            return response.data
-        elif isinstance(response, dict) and "data" in response:
-            return response["data"]
-        return []
-    except Exception as e:
-        return []
+    init_db()
+    with open(DB_FILE, 'r') as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            return []
+
+def save_listings(listings):
+    with open(DB_FILE, 'w') as f:
+        json.dump(listings, f, indent=4)
 
 def add_donation(donor, food_name, quantity, location, contact, cooked_time):
-    if not supabase:
-        return False
-    try:
-        new_item = {
-            "donor": str(donor).strip(),
-            "food": str(food_name).strip(),
-            "quantity": str(quantity).strip(), 
-            "location": str(location).strip(),
-            "contact": str(contact).strip(),
-            "cooked_time": cooked_time.strftime("%Y-%m-%d %H:%M"),
-            "status": "Available",
-            "claimed_by": ""
-        }
-        supabase.table("food_listings").insert(new_item).execute()
-        return True
-    except Exception as e:
-        return False
+    listings = get_all_listings()
+    new_item = {
+        "id": len(listings) + 1,
+        "donor": donor,
+        "food": food_name,
+        "quantity": int(quantity),
+        "location": location,
+        "contact": contact,
+        "cooked_time": cooked_time.strftime("%Y-%m-%d %H:%M"),
+        "status": "Available",
+        "claimed_by": ""
+    }
+    listings.append(new_item)
+    save_listings(listings)
+
+def update_expiry_and_get_listings():
+    listings = get_all_listings()
+    updated = False
+    current_time = datetime.now()
+    
+    for item in listings:
+        if item["status"] == "Available":
+            cooked_dt = datetime.strptime(item["cooked_time"], "%Y-%m-%d %H:%M")
+            hours_passed = (current_time - cooked_dt).total_seconds() / 3600
+            if hours_passed > 6:
+                item["status"] = "Expired"
+                updated = True
+                
+    if updated:
+        save_listings(listings)
+    return listings
 
 def claim_food(item_id, ngo_name):
-    if not supabase:
-        return False
-    try:
-        supabase.table("food_listings").update({
-            "status": "Claimed", 
-            "claimed_by": str(ngo_name).strip()
-        }).eq("id", int(item_id)).execute()
-        return True
-    except Exception as e:
-        return False
+    listings = get_all_listings()
+    for item in listings:
+        if item["id"] == item_id and item["status"] == "Available":
+            item["status"] = "Claimed"
+            item["claimed_by"] = ngo_name
+            save_listings(listings)
+            return True
+    return False
 
-# --- WEB APPLICATION RENDERING INTERFACE ---
-st.set_page_config(page_title="Aahar Setu - Enterprise Node", page_icon="🌾", layout="wide")
-st.title("🌾 Aahar Setu")
-st.markdown("Rescue Extra Food. Feed Local Communities. Connecting Donors and NGOs Instantly to Prevent Food Waste.")
+st.set_page_config(page_title="Aahar Setu - Food Rescue", page_icon="🌾", layout="wide")
+st.title("🌾 Aahar Setu (Food Rescue Network)")
+st.markdown("Connecting Extra Food Donors with Local NGOs to End Hunger. *Safe. Transparent. Impactful.*")
 st.divider()
 
-all_items = get_all_listings()
-
-tab1, tab2, tab3 = st.tabs([
-    "🎁 Donate Food Platform ", 
-    "🔎 Active Food Rescue Listings (NGO Real-Time View Tracker)", 
-    "📋 Transactions Analytics Log Dashboard"
-])
+all_items = update_expiry_and_get_listings()
+tab1, tab2, tab3 = st.tabs(["🎁 Donate Food", "🔎 Available Food (NGO View)", "📋 Dashboard & Logs"])
 
 with tab1:
-    st.header("Donate Extra Food Details Form")
+    st.header("Register Extra Food Details")
     with st.form("donation_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
-            donor = st.text_input("Donor / Organization Name")
-            food_name = st.text_input("Food Item Details Menu Package Description")
-            quantity = st.text_input("Serves How Many Individuals Capacity Metrics")
+            donor = st.text_input("Donor / Organization Name (e.g., Star Hotel, Annai Mandapam)")
+            food_name = st.text_input("Food Menu (e.g., Veg Biryani, Rice & Sambar)")
+            quantity = st.number_input("Serves How Many People? (Count)", min_value=1, step=1)
         with col2:
             location = st.text_area("Pickup Address")
-            contact = st.text_input("Active Phone Verification Mobile Network Number")
-            cooked_time = st.slider("When was it cooked timestamp?", min_value=datetime.now().replace(hour=0, minute=0), max_value=datetime.now(), value=datetime.now())
+            contact = st.text_input("Contact Mobile Number")
+            cooked_time = st.slider("When was it cooked?", min_value=datetime.now().replace(hour=0, minute=0), max_value=datetime.now(), value=datetime.now())
         
-        submit_btn = st.form_submit_button("Publish Donation Entry Payload")
+        submit_btn = st.form_submit_button("Submit Donation Listing")
         if submit_btn:
-            if donor and food_name and location and contact and quantity:
-                if add_donation(donor, food_name, quantity, location, contact, cooked_time):
-                    st.success("🎉 Transaction Completed! Data payload pushed securely into Supabase Production Cloud Database.")
-                    st.rerun()
+            if donor and food_name and location and contact:
+                add_donation(donor, food_name, quantity, location, contact, cooked_time)
+                st.success("🎉 Success! Your donation entry is live on the NGO dashboard.")
+                st.rerun()
             else:
-                st.error("⚠️ Mandatory fields missing! Please fill out all form input fields.")
+                st.error("⚠️ Please fill out all mandatory fields before submitting.")
 
 with tab2:
-    st.header("Active Real-Time Food Rescue Listings Available in Your Area Zone")
+    st.header("Active Food Listings in Your Area")
+    available_items = [i for i in all_items if i["status"] == "Available"]
     
-    available_items = []
-    if all_items and isinstance(all_items, list):
-        for idx_item in all_items:
-            if isinstance(idx_item, dict):
-                status_str = str(idx_item.get("status", "")).strip().lower()
-                if status_str == "available" or status_str == "":
-                    available_items.append(idx_item)
-                    
     if not available_items:
-        st.info("No active verified food entries found on cloud pipeline. Register a donation listing input to verify data stream logs!")
+        st.info("No active food listings available right now. Check back soon!")
     else:
         for item in available_items:
-            item_id_val = item.get("id")
             with st.container(border=True):
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.subheader(f"🍱 {item.get('food', 'N/A')}")
-                    st.write(f"**From Organization Source Location:** {item.get('donor', 'N/A')}")
-                    st.write(f"**Feeds Capacity Metrics Value:** {item.get('quantity', 'N/A')} individuals")
-                    st.caption(f"Network system log timestamp: {item.get('cooked_time', 'N/A')}")
+                    st.subheader(f"🍱 {item['food']}")
+                    st.write(f"**From:** {item['donor']} | **Feeds:** {item['quantity']} people")
+                    st.caption(f"Cooked on: {item['cooked_time']}")
                 with c2:
-                    st.write(f"📍 **Pickup Location Address:** {item.get('location', 'N/A')}")
-                    st.write(f"📞 **Active Phone Verification Number:** {item.get('contact', 'N/A')}")
+                    st.write(f"📍 **Address:** {item['location']}")
+                    st.write(f"📞 **Contact:** {item['contact']}")
                 with c3:
-                    ngo_name_input = st.text_input("Enter Volunteer / NGO Identity Name", key=f"ngo_field_ref_index_key_{item_id_val}")
-                    if st.button("Lock and Claim Food Rescue Package Allocation", key=f"btn_action_claim_trigger_ref_index_key_{item_id_val}"):
-                        if ngo_name_input and item_id_val is not None:
-                            if claim_food(item_id_val, ngo_name_input):
-                                st.success("🎉 Success! Core row state successfully locked and mapped to target NGO.")
+                    ngo_name = st.text_input("Enter NGO Name", key=f"ngo_{item['id']}")
+                    if st.button("Claim Food", key=f"btn_{item['id']}"):
+                        if ngo_name:
+                            if claim_food(item["id"], ngo_name):
+                                st.success(f"Reserved for {ngo_name}!")
                                 st.rerun()
                         else:
-                            st.warning("⚠️ NGO identity field cannot be kept blank.")
+                            st.warning("Enter NGO name first")
 
 with tab3:
-    st.header("Global Network Cloud Operations Analytics Log Dashboard")
+    st.header("Network Statistics")
+    total_listings = len(all_items)
+    claimed_count = len([i for i in all_items if i["status"] == "Claimed"])
+    expired_count = len([i for i in all_items if i["status"] == "Expired"])
     
-    total_listings = 0
-    claimed_count = 0
-    expired_count = 0
-    
-    if all_items and isinstance(all_items, list):
-        total_listings = len(all_items)
-        for idx_stat in all_items:
-            if isinstance(idx_stat, dict):
-                status_stat_str = str(idx_stat.get("status", "")).strip().lower()
-                if status_stat_str == "claimed":
-                    claimed_count += 1
-                elif status_stat_str == "expired":
-                    expired_count += 1
-                    
     m1, m2, m3 = st.columns(3)
-    m1.metric("Total Consolidated Cloud Transactions Listings", total_listings)
-    m2.metric("Successful Active Food Rescues Allocation States", claimed_count)
-    m3.metric("Safety Timeout Control State Blocks (Expired)", expired_count)
+    m1.metric("Total Food Listings", total_listings)
+    m2.metric("Successful Rescues (Claimed)", claimed_count)
+    m3.metric("Safety Timeouts (Expired)", expired_count)
     
     st.divider()
-    st.subheader("System Architecture Relational Row Matrix Dataset Logs Grid")
-    
-    if all_items and isinstance(all_items, list) and len(all_items) > 0:
-        st.dataframe(all_items, use_container_width=True)
-    else:
-        st.info("System database dashboard is completely empty right now.")
+    st.subheader("All Transaction History Log")
+    st.dataframe(all_items, use_container_width=True)
